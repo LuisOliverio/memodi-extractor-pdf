@@ -1,0 +1,3 @@
+[client]
+toolbarMode = "minimal" # Oculta la barra de herramientas para los usuarios
+showSidebarNavigation = false
