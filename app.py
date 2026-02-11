@@ -53,7 +53,7 @@ def create_pdf(text):
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Cuerpo del texto (Arial es la fuente estándar compatible en FPDF)
+    # Cuerpo del texto
     pdf.set_font("Arial", size=11)
     
     # Manejo básico de caracteres latinos
@@ -84,7 +84,6 @@ def get_pdf_text(pdf_file):
             # 8 = Highlight, 4 = Underline
             if annot.type[0] in (8, 4):
                 r = annot.rect
-                # Padding para capturar letras altas/bajas
                 r.x0 -= 1; r.y0 -= 1; r.x1 += 1; r.y1 += 1
                 
                 text = page.get_text("text", clip=r)
@@ -96,7 +95,6 @@ def get_pdf_text(pdf_file):
                         "page": page_num + 1
                     })
         
-        # Ordenamos por lectura: Arriba->Abajo, Izquierda->Derecha
         page_annots.sort(key=lambda x: (x['y0'], x['x0']))
         all_annotations.extend(page_annots)
 
@@ -106,17 +104,17 @@ def get_pdf_text(pdf_file):
     return raw_output
 
 def summarize_with_ai(raw_text):
-    # --- MODELO SOLICITADO ---
     model_name = 'gemini-flash-lite-latest'
     
     try:
         model = genai.GenerativeModel(model_name)
         
+        # --- PROMPT CORREGIDO: MODO SILENCIOSO ---
         prompt = f"""
-        Actúa como un **Médico Especialista en Medicina Interna** con experiencia en edición de textos científicos.
+        Actúa como un **Médico Especialista en Medicina Interna** y editor científico.
         
         **OBJETIVO:**
-        Procesa los siguientes fragmentos extraídos de un PDF (con ruido de escaneo) para generar un **Resumen Clínico Profesional**.
+        Procesa los fragmentos extraídos de un PDF para generar un **Resumen Clínico Profesional**.
 
         **INPUT:**
         {raw_text}
@@ -126,18 +124,19 @@ def summarize_with_ai(raw_text):
         2. **Estructura Narrativa:**
            - **Definición y Epidemiología**
            - **Fisiopatología**
-           - **Diagnóstico Diferencial** (Contrastes clave)
-           - **Manejo/Tratamiento** (Dosis exactas)
+           - **Diagnóstico Diferencial**
+           - **Manejo/Tratamiento**
         3. **Rigor Médico:** Mantén intacta terminología y valores.
         4. **Estilo:** Directo, tipo Harrison/UpToDate.
 
-        **FINAL:**
-        Añade al final:
-        ### 💎 Perlas Clínicas
-        Lista de puntos clave críticos.
+        **FORMATO DE SALIDA (ESTRICTO):**
+        - Tu respuesta debe contener **EXCLUSIVAMENTE** el contenido Markdown del resumen.
+        - **NO** incluyas introducciones como "Claro, aquí tienes el resumen" o "Como médico especialista...".
+        - **NO** expliques lo que hiciste.
+        - Comienza DIRECTAMENTE con el título del tema (ej: # Síncope).
+        - Termina con la sección: ### 💎 Perlas Clínicas
         """
         
-        # Temperatura baja para precisión
         config = genai.types.GenerationConfig(temperature=0.3)
         response = model.generate_content(prompt, generation_config=config)
         return response.text
@@ -155,7 +154,7 @@ with col2:
 st.markdown("<h1 style='text-align: center;'>Memodi Notes</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #555;'>Sube tu PDF subrayado y obtén tu nota clínica.</p>", unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader(" ", type=["pdf"]) # Label vacío intencional
+uploaded_file = st.file_uploader(" ", type=["pdf"]) 
 
 if uploaded_file:
     # 1. Extracción
@@ -163,7 +162,7 @@ if uploaded_file:
         raw_text = get_pdf_text(uploaded_file)
 
     if raw_text:
-        # 2. IA (Texto exacto solicitado)
+        # 2. IA
         with st.spinner("🧠 Memodi IA está pensando..."):
             resumen_final = summarize_with_ai(raw_text)
         
@@ -172,11 +171,11 @@ if uploaded_file:
         else:
             st.success("¡Nota Clínica Generada!")
             
-            # Preparamos el texto con firma para TXT y MD
-            firma_texto = "\n\n---\nGenerado con Memodi IA - 🧠 memodiapp.com"
+            # Firma para exportar
+            firma_texto = "\n\n---\nGenerado con Memodi IA - memodiapp.com"
             resumen_firmado = resumen_final + firma_texto
             
-            # Mostrar en pantalla (sin la firma extra pegada al texto visual, usamos caption)
+            # Visualización
             st.markdown("---")
             st.markdown(resumen_final)
             st.caption("Generado con Memodi IA - memodiapp.com")
@@ -186,36 +185,15 @@ if uploaded_file:
             st.subheader("📥 Exportar Nota")
             d1, d2, d3 = st.columns(3)
             
-            # Botón 1: Markdown
             with d1:
-                st.download_button(
-                    label="📄 Markdown",
-                    data=resumen_firmado,
-                    file_name="Nota_Memodi.md",
-                    mime="text/markdown"
-                )
-            
-            # Botón 2: Texto
+                st.download_button("📄 Markdown", resumen_firmado, "Nota_Memodi.md", "text/markdown")
             with d2:
-                st.download_button(
-                    label="📝 Texto (.txt)",
-                    data=resumen_firmado,
-                    file_name="Nota_Memodi.txt",
-                    mime="text/plain"
-                )
-            
-            # Botón 3: PDF
+                st.download_button("📝 Texto", resumen_firmado, "Nota_Memodi.txt", "text/plain")
             with d3:
                 try:
-                    # El PDF usa su propia lógica de firma interna en la función create_pdf
                     pdf_bytes = create_pdf(resumen_final)
-                    st.download_button(
-                        label="📕 PDF",
-                        data=pdf_bytes,
-                        file_name="Nota_Memodi.pdf",
-                        mime="application/pdf"
-                    )
-                except Exception as e:
+                    st.download_button("📕 PDF", pdf_bytes, "Nota_Memodi.pdf", "application/pdf")
+                except:
                     st.error("Error generando PDF")
                     
     else:
