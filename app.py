@@ -59,8 +59,8 @@ def summarize_with_ai(raw_text):
     try:
         response = model.generate_content(prompt)
         return response.text
-    except:
-        return "Error al conectar con la IA. Intenta de nuevo."
+    except Exception as e:
+        return f"Error técnico: {str(e)}"
 
 # --- INTERFAZ ---
 st.title("🩺 Memodi Notes")
