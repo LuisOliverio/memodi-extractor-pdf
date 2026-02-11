@@ -1,10 +1,12 @@
 import streamlit as st
 import fitz  # PyMuPDF
 import google.generativeai as genai
+from fpdf import FPDF
 
 # --- 1. CONFIGURACIÓN ---
 st.set_page_config(
     page_title="Memodi Notes",
+    page_icon="🧠",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
@@ -15,7 +17,7 @@ hide_streamlit_style = """
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
-.stApp { margin-top: -80px; }
+.stApp { margin-top: -50px; }
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -28,8 +30,28 @@ except Exception as e:
     st.error("⚠️ Error de configuración: No se encontró la API Key.")
     st.stop()
 
-# --- 4. EXTRACCIÓN GEOMÉTRICA (MOTOR MEMODI) ---
+# --- 4. FUNCIONES DE UTILIDAD ---
+
+def create_pdf(text):
+    """Genera un PDF simple a partir del texto"""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("Arial", size=11)
+    
+    # Manejo básico de caracteres latinos para FPDF (Arial estándar no soporta todo Unicode)
+    # Reemplazamos caracteres problemáticos comunes si fuera necesario o codificamos a latin-1
+    try:
+        # Intentamos codificar a latin-1 para compatibilidad con Arial
+        text_encoded = text.encode('latin-1', 'replace').decode('latin-1')
+    except:
+        text_encoded = text # Fallback
+
+    pdf.multi_cell(0, 6, text_encoded)
+    return pdf.output(dest='S').encode('latin-1')
+
 def get_pdf_text(pdf_file):
+    """Extracción geométrica precisa"""
     doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
     all_annotations = []
     
@@ -37,7 +59,6 @@ def get_pdf_text(pdf_file):
         page_annots = []
         for annot in page.annots():
             if annot.type[0] in (8, 4): # Highlight / Underline
-                # Padding para capturar bien el texto
                 r = annot.rect
                 r.x0 -= 1; r.y0 -= 1; r.x1 += 1; r.y1 += 1
                 
@@ -50,28 +71,23 @@ def get_pdf_text(pdf_file):
                         "page": page_num + 1
                     })
         
-        # Ordenamos por lectura humana (Arriba->Abajo, Izquierda->Derecha)
         page_annots.sort(key=lambda x: (x['y0'], x['x0']))
         all_annotations.extend(page_annots)
 
-    # Formateamos la salida cruda
     raw_output = ""
     for item in all_annotations:
         raw_output += f"[Pág {item['page']}] {item['text']}\n"
-        
     return raw_output
 
-# --- 5. CEREBRO CLÍNICO (GEMINI FLASH LITE) ---
 def summarize_with_ai(raw_text):
-    # Modelo rápido y eficiente
+    # --- MODELO SOLICITADO ---
     model_name = 'gemini-flash-lite-latest'
     
     try:
         model = genai.GenerativeModel(model_name)
         
-        # --- TU PROMPT DE ALTA ESPECIALIDAD ---
         prompt = f"""
-        Actúa como un **Médico Especialista** con experiencia en edición de textos científicos.
+        Actúa como un **Médico Especialista en Medicina Interna** con experiencia en edición de textos científicos.
         
         **OBJETIVO:**
         Procesa los siguientes fragmentos de texto extraídos de un PDF (que contienen ruido como números de página, palabras cortadas por guiones y saltos de línea abruptos) para generar un **Resumen Clínico Profesional**.
@@ -80,60 +96,94 @@ def summarize_with_ai(raw_text):
         {raw_text}
 
         **REGLAS DE PROCESAMIENTO:**
-        1. **Limpieza y Unificación:** Une las palabras cortadas por guiones (ej. 'sponta- neous' a 'spontaneous'), elimina las marcas de página (ej. '[Pág 1]') y corrige errores de escaneo.
-        2. **Estructura Narrativa:** No hagas una simple lista. Crea una narrativa fluida dividida en estas secciones lógicas (si la información está disponible):
+        1. **Limpieza y Unificación:** Une palabras cortadas, elimina marcas de página.
+        2. **Estructura Narrativa:** Crea una narrativa fluida dividida en secciones lógicas:
            - **Definición y Epidemiología**
            - **Fisiopatología**
-           - **Diagnóstico Diferencial** (Enfatiza distinciones clave ej. Síncope vs Epilepsia)
+           - **Diagnóstico Diferencial**
            - **Manejo/Tratamiento**
-        3. **Rigor Médico:** Mantén intacta toda la terminología técnica, valores numéricos, umbrales de presión arterial, porcentajes y referencias a medicamentos (dosis, nombres exactos).
-        4. **Tono:** Profesional, directo y con rigor científico, similar a un manual tipo **Harrison** o **UpToDate**.
+        3. **Rigor Médico:** Mantén intacta terminología, dosis y valores.
+        4. **Tono:** Profesional tipo Harrison/UpToDate.
 
         **SALIDA FINAL:**
-        Al terminar la narrativa, añade una sección obligatoria llamada:
-        ### 💎 Tus anotaciones más importantes
-        Una lista de puntos clave (bullet points) con lo más crítico para un algoritmo diagnóstico (Red Flags, maniobras, decisiones clave).
+        Añade al final:
+        ### 💎 Perlas Clínicas
+        Lista de puntos clave críticos (Red Flags, maniobras).
         """
         
-        # Temperatura baja para evitar alucinaciones en dosis/datos
         config = genai.types.GenerationConfig(temperature=0.3)
-        
         response = model.generate_content(prompt, generation_config=config)
         return response.text
         
     except Exception as e:
         return f"Error técnico al generar el resumen: {str(e)}"
 
-# --- 6. INTERFAZ DE USUARIO ---
-st.title("🧠 Memodi Notes")
-st.markdown("Sube tu PDF subrayado para generar un resumen personlizado")
+# --- 5. INTERFAZ DE USUARIO ---
 
-uploaded_file = st.file_uploader("Sube PDF (Máx 50MB)", type=["pdf"])
+# Logo Centrado
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    st.image("https://memodiapp.com/images/Icontransparentshadow.png", width=120)
+
+st.markdown("<h1 style='text-align: center;'>Memodi Notes</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>Sube tu PDF subrayado y obtén tu nota clínica.</p>", unsafe_allow_html=True)
+
+uploaded_file = st.file_uploader(" ", type=["pdf"]) # Label vacío para limpieza visual
 
 if uploaded_file:
-    # 1. Extracción
-    with st.spinner("Extrayendo evidencia del texto..."):
+    # Extracción
+    with st.spinner("🔍 Extrayendo tus subrayados..."):
         raw_text = get_pdf_text(uploaded_file)
 
     if raw_text:
-        # 2. Análisis Clínico
+        # IA
         with st.spinner("🧠 Memodi IA está pensando..."):
             resumen_final = summarize_with_ai(raw_text)
         
         if "Error técnico" in resumen_final:
             st.error(resumen_final)
         else:
-            st.success("¡Nota Clínica Lista!")
+            st.success("¡Nota Clínica Generada!")
             
             st.markdown("---")
             st.markdown(resumen_final)
             st.markdown("---")
             
-            st.download_button(
-                label="📥 Descargar Nota (.md)",
-                data=resumen_final,
-                file_name="Nota_Clinica_Memodi.md",
-                mime="text/markdown"
-            )
+            # --- SECCIÓN DE DESCARGAS ---
+            st.subheader("📥 Exportar Nota")
+            d_col1, d_col2, d_col3 = st.columns(3)
+            
+            # 1. Markdown
+            with d_col1:
+                st.download_button(
+                    label="📄 Markdown (.md)",
+                    data=resumen_final,
+                    file_name="Nota_Memodi.md",
+                    mime="text/markdown"
+                )
+            
+            # 2. Texto Plano
+            with d_col2:
+                st.download_button(
+                    label="📝 Texto (.txt)",
+                    data=resumen_final,
+                    file_name="Nota_Memodi.txt",
+                    mime="text/plain"
+                )
+
+            # 3. PDF
+            with d_col3:
+                # Generamos el PDF al vuelo
+                try:
+                    pdf_bytes = create_pdf(resumen_final)
+                    st.download_button(
+                        label="📕 PDF (.pdf)",
+                        data=pdf_bytes,
+                        file_name="Nota_Memodi.pdf",
+                        mime="application/pdf"
+                    )
+                except Exception as e:
+                    st.warning("Error al generar PDF")
+                    
     else:
-        st.warning("⚠️ No se detectó texto subrayado. Asegúrate de usar un PDF nativo.")
+        st.warning("⚠️ No se detectó texto subrayado. Usa Adobe/Preview.")
