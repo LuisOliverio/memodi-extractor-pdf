@@ -44,7 +44,7 @@ def get_pdf_text(pdf_file):
     return "\n".join(text_parts)
 
 def summarize_with_ai(raw_text):
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-flash-lite-latest')
     prompt = f"""
     Actúa como un asistente médico experto.
     Analiza estos fragmentos de texto extraídos de un documento médico subrayado:
