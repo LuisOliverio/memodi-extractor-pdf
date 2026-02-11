@@ -2,7 +2,7 @@ import streamlit as st
 import fitz  # PyMuPDF
 import google.generativeai as genai
 from fpdf import FPDF
-import time
+import base64
 
 # --- 1. CONFIGURACIÓN ---
 st.set_page_config(
@@ -12,50 +12,34 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. SEGURIDAD & ESTILOS "MODO NINJA" ---
+# --- 2. ESTILOS "NUCLEAR V2" ---
 custom_css = """
 <style>
-/* Importamos Roboto */
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
 
 html, body, [class*="css"] { font-family: 'Roboto', sans-serif; }
 h1, h2, h3 { font-family: 'Roboto', sans-serif; font-weight: 700; }
 
-/* --- CSS NUCLEAR PARA OCULTAR INTERFAZ DE STREAMLIT --- */
+/* OCULTAR TODO RASTRO DE STREAMLIT */
+#MainMenu {visibility: hidden !important;}
+footer {visibility: hidden !important;}
+header {visibility: hidden !important;}
 
-/* 1. Ocultar la barra superior (Menu hamburguesa, Deploy, Settings, Fullscreen) */
-[data-testid="stToolbar"] { 
-    visibility: hidden !important; 
-    display: none !important; 
+/* Ocultar barra superior y decoraciones */
+[data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+[data-testid="stHeader"] {visibility: hidden !important; display: none !important;}
+[data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
+[data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
+
+/* Ajustar márgenes para subir el contenido al tope */
+.block-container {
+    padding-top: 0rem !important;
+    padding-bottom: 0rem !important;
+    margin-top: -50px !important;
 }
 
-/* 2. Ocultar el Header (la franja vacía arriba) */
-[data-testid="stHeader"] { 
-    visibility: hidden !important; 
-    display: none !important; 
-    height: 0px !important;
-}
-
-/* 3. Ocultar Footer ("Made with Streamlit") */
-footer { 
-    visibility: hidden !important; 
-    display: none !important; 
-}
-
-/* 4. Subir el contenido para aprovechar el espacio liberado */
-.stApp { 
-    margin-top: -60px !important; 
-}
-
-/* 5. Ocultar botón "Deploy" específico si aparece flotando */
-.stDeployButton { 
-    display:none !important; 
-}
-
-/* 6. Ocultar decoraciones de imágenes (botón fullscreen de imágenes individuales) */
-[data-testid="stImageCaption"] { display: none; }
-button[title="View fullscreen"] { display: none !important; }
-
+/* Ocultar botón de deploy si persiste */
+.stDeployButton {display:none !important;}
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
@@ -63,17 +47,26 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # --- 3. GESTIÓN DE SECRETOS ---
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
-    # Contraseña Maestra (Definida en Secrets o default)
     app_password = st.secrets.get("APP_PASSWORD", "MEMODI_VIP_2025")
     genai.configure(api_key=api_key)
 except Exception as e:
     st.error("⚠️ Error crítico de configuración.")
     st.stop()
 
-# --- 4. SISTEMA DE LOGIN (CANDADO) ---
+# --- HELPER: LOGO EN HTML (SIN BOTONES DE ZOOM) ---
+def mostrar_logo():
+    # Usamos HTML puro para que no aparezca el botón de "Fullscreen" al pasar el mouse
+    st.markdown(
+        """
+        <div style="display: flex; justify-content: center; margin-bottom: 10px;">
+            <img src="https://memodiapp.com/images/Icontransparentshadow.png" width="100">
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# --- 4. SISTEMA DE LOGIN ---
 def check_password():
-    """Retorna True solo si la clave es correcta"""
-    
     if "password_correct" not in st.session_state:
         st.session_state.password_correct = False
 
@@ -82,28 +75,25 @@ def check_password():
 
     # Interfaz de Login
     st.markdown("<br><br>", unsafe_allow_html=True)
+    mostrar_logo() # Logo HTML
+    st.markdown("<h3 style='text-align: center;'>Acceso Memodi Notes</h3>", unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        st.image("https://memodiapp.com/images/Icontransparentshadow.png", width=100)
-        st.markdown("<h3 style='text-align: center;'>Acceso Memodi Notes</h3>", unsafe_allow_html=True)
-        
-        pwd_input = st.text_input("Ingresa tu Clave de Acceso:", type="password")
-        
+        pwd_input = st.text_input("Clave de Acceso:", type="password", label_visibility="collapsed", placeholder="Ingresa tu clave aquí")
         if st.button("Ingresar", use_container_width=True):
             if pwd_input == app_password:
                 st.session_state.password_correct = True
                 st.rerun()
             else:
                 st.error("⛔ Clave incorrecta")
-                
     return False
 
-# ⛔ BLOQUEO DE SEGURIDAD
 if not check_password():
     st.stop()
 
 # ==========================================
-# 🚀 APLICACIÓN REAL (SOLO VISIBLE CON CLAVE)
+# 🚀 APP PRINCIPAL
 # ==========================================
 
 def create_pdf(text):
@@ -162,7 +152,7 @@ def summarize_with_ai(raw_text):
         4. Estilo directo (Harrison/UpToDate).
         **FORMATO SALIDA:**
         - Solo Markdown.
-        - Sin introducciones ni saludos.
+        - Sin introducciones.
         - Título directo (ej: # TEMA).
         - Finaliza con: ### 💎 Perlas Clínicas
         """
@@ -174,10 +164,7 @@ def summarize_with_ai(raw_text):
 
 # --- INTERFAZ VISUAL ---
 
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    st.image("https://memodiapp.com/images/Icontransparentshadow.png", width=120)
-
+mostrar_logo() # Logo HTML aquí también
 st.markdown("<h1 style='text-align: center;'>Memodi Notes</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #555;'>Sube tu PDF subrayado y obtén tu nota clínica.</p>", unsafe_allow_html=True)
 
