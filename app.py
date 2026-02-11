@@ -2,7 +2,7 @@ import streamlit as st
 import fitz  # PyMuPDF
 import google.generativeai as genai
 from fpdf import FPDF
-import base64
+import pandas as pd
 
 # --- 1. CONFIGURACIÓN ---
 st.set_page_config(
@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. ESTILOS "NUCLEAR V3" (Optimizado para Iframe Recortado) ---
+# --- 2. ESTILOS PRO (ROBOTO + NUCLEAR V3) ---
 custom_css = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
@@ -20,49 +20,34 @@ custom_css = """
 html, body, [class*="css"] { font-family: 'Roboto', sans-serif; }
 h1, h2, h3 { font-family: 'Roboto', sans-serif; font-weight: 700; }
 
-/* OCULTAR TODO RASTRO DE STREAMLIT */
-#MainMenu {visibility: hidden !important;}
-footer {visibility: hidden !important;}
-header {visibility: hidden !important;}
+/* OCULTAR INTERFAZ STREAMLIT */
+[data-testid="stToolbar"], [data-testid="stHeader"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], footer {
+    visibility: hidden !important; display: none !important;
+}
 
-/* Ocultar barra superior y decoraciones */
-[data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
-[data-testid="stHeader"] {visibility: hidden !important; display: none !important;}
-[data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
-[data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
-
-/* Ajustar márgenes para el modo embebido */
 .block-container {
     padding-top: 0rem !important;
     padding-bottom: 0rem !important;
-    margin-top: -30px !important; /* Ajuste fino para el recorte superior */
+    margin-top: -30px !important;
 }
 
-/* Ocultar botón de deploy si persiste */
-.stDeployButton {display:none !important;}
-
-/* Ocultar botón de pantalla completa en imágenes */
-button[title="View fullscreen"] {
-    display: none !important;
-}
+button[title="View fullscreen"] { display: none !important; }
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# --- ESPACIADOR DE SEGURIDAD ---
-# Este div evita que el logo se corte por el desplazamiento del iframe en WordPress
+# Espaciador para compensar el recorte del iframe en WordPress
 st.markdown("<div style='margin-top: 55px;'></div>", unsafe_allow_html=True)
 
 # --- 3. GESTIÓN DE SECRETOS ---
 try:
     api_key = st.secrets["GOOGLE_API_KEY"]
-    app_password = st.secrets.get("APP_PASSWORD", "MEMODI_VIP_2025")
     genai.configure(api_key=api_key)
 except Exception as e:
-    st.error("⚠️ Error crítico de configuración.")
+    st.error("⚠️ Error de configuración de API Key.")
     st.stop()
 
-# --- HELPER: LOGO EN HTML (SIN BOTONES DE ZOOM) ---
+# --- HELPER: LOGO ---
 def mostrar_logo():
     st.markdown(
         """
@@ -73,7 +58,7 @@ def mostrar_logo():
         unsafe_allow_html=True
     )
 
-# --- 4. SISTEMA DE LOGIN ---
+# --- 4. SISTEMA DE LOGIN (GOOGLE SHEETS) ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state.password_correct = False
@@ -81,7 +66,19 @@ def check_password():
     if st.session_state.password_correct:
         return True
 
-    # Interfaz de Login
+    # Lectura de la hoja de Google
+    sheet_id = "1LLGwm7CTENFw4ZNU7S--j4DmiOEL7mSSqMJIlo-_FY4"
+    sheet_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    
+    try:
+        df = pd.read_csv(sheet_url)
+        # Buscamos en la columna 'Password' donde 'Activo' sea TRUE o VERDADERO
+        # Asegúrate de que tus columnas en el Excel se llamen exactamente 'Password' y 'Activo'
+        valid_passwords = df[df['Activo'].astype(str).str.upper() == 'TRUE']['Password'].astype(str).tolist()
+    except Exception as e:
+        st.error("⚠️ Error conectando con la base de datos de accesos. Verifica que la hoja sea pública (Lector).")
+        return False
+
     mostrar_logo()
     st.markdown("<h3 style='text-align: center;'>Acceso Memodi Notes</h3>", unsafe_allow_html=True)
     
@@ -89,18 +86,18 @@ def check_password():
     with col2:
         pwd_input = st.text_input("Clave de Acceso:", type="password", label_visibility="collapsed", placeholder="Ingresa tu clave aquí")
         if st.button("Ingresar", use_container_width=True):
-            if pwd_input == app_password:
+            if pwd_input in valid_passwords:
                 st.session_state.password_correct = True
                 st.rerun()
             else:
-                st.error("⛔ Clave incorrecta")
+                st.error("⛔ Clave incorrecta o cuenta inactiva.")
     return False
 
 if not check_password():
     st.stop()
 
 # ==========================================
-# 🚀 APP PRINCIPAL
+# 🚀 APP PRINCIPAL (Lógica Médica)
 # ==========================================
 
 def create_pdf(text):
@@ -131,46 +128,24 @@ def get_pdf_text(pdf_file):
                 r.x0 -= 1; r.y0 -= 1; r.x1 += 1; r.y1 += 1
                 text = page.get_text("text", clip=r)
                 if text.strip():
-                    page_annots.append({
-                        "text": text.strip(),
-                        "y0": annot.rect.y0,
-                        "x0": annot.rect.x0,
-                        "page": page_num + 1
-                    })
+                    page_annots.append({"text": text.strip(), "y0": annot.rect.y0, "x0": annot.rect.x0, "page": page_num + 1})
         page_annots.sort(key=lambda x: (x['y0'], x['x0']))
         all_annotations.extend(page_annots)
-    raw_output = ""
-    for item in all_annotations:
-        raw_output += f"[Pág {item['page']}] {item['text']}\n"
-    return raw_output
+    return "".join([f"[Pág {item['page']}] {item['text']}\n" for item in all_annotations])
 
 def summarize_with_ai(raw_text):
     model_name = 'gemini-flash-lite-latest'
     try:
         model = genai.GenerativeModel(model_name)
-        prompt = f"""
-        Actúa como un **Médico Especialista en Medicina Interna** y editor científico.
-        **OBJETIVO:** Procesa los fragmentos de un PDF para generar un **Resumen Clínico Profesional**.
-        **INPUT:** {raw_text}
-        **REGLAS:**
-        1. Limpieza y unión de palabras.
-        2. Estructura Narrativa (Definición, Fisiopatología, Dx Dif, Tx).
-        3. Rigor médico absoluto.
-        4. Estilo directo (Harrison/UpToDate).
-        **FORMATO SALIDA:**
-        - Solo Markdown.
-        - Sin introducciones.
-        - Título directo (ej: # TEMA).
-        - Finaliza con: ### 💎 Perlas Clínicas
-        """
-        config = genai.types.GenerationConfig(temperature=0.3)
-        response = model.generate_content(prompt, generation_config=config)
+        prompt = f"""Actúa como Médico Especialista en Medicina Interna. Procesa los fragmentos: {raw_text}. 
+        Reglas: Limpieza, estructura narrativa (Definición, Fisiopatología, Dx Dif, Tx), rigor médico, estilo Harrison. 
+        Salida: Solo Markdown, sin intros, termina con ### 💎 Perlas Clínicas."""
+        response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.3))
         return response.text
     except Exception as e:
         return f"Error técnico: {str(e)}"
 
-# --- INTERFAZ VISUAL ---
-
+# --- UI ---
 mostrar_logo()
 st.markdown("<h1 style='text-align: center;'>Memodi Notes</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #555;'>Sube tu PDF subrayado y obtén tu nota clínica.</p>", unsafe_allow_html=True)
@@ -178,37 +153,25 @@ st.markdown("<p style='text-align: center; color: #555;'>Sube tu PDF subrayado y
 uploaded_file = st.file_uploader(" ", type=["pdf"]) 
 
 if uploaded_file:
-    with st.spinner("🔍 Extrayendo tus subrayados..."):
+    with st.spinner("🔍 Extrayendo subrayados..."):
         raw_text = get_pdf_text(uploaded_file)
-
     if raw_text:
         with st.spinner("🧠 Memodi IA está pensando..."):
             resumen_final = summarize_with_ai(raw_text)
-        
         if "Error técnico" in resumen_final:
             st.error(resumen_final)
         else:
-            st.success("¡Nota Clínica Generada!")
-            
-            firma_texto = "\n\n---\nGenerado con Memodi IA - memodiapp.com"
-            resumen_firmado = resumen_final + firma_texto
-            
+            st.success("¡Nota Clínica Lista!")
+            resumen_firmado = resumen_final + "\n\n---\nGenerado con Memodi IA - memodiapp.com"
             st.markdown("---")
             st.markdown(resumen_final)
             st.caption("Generado con Memodi IA - memodiapp.com")
             st.markdown("---")
-            
-            st.subheader("📥 Exportar Nota")
+            st.subheader("📥 Exportar")
             d1, d2, d3 = st.columns(3)
-            with d1:
-                st.download_button("📄 Markdown", resumen_firmado, "Nota_Memodi.md", "text/markdown")
-            with d2:
-                st.download_button("📝 Texto", resumen_firmado, "Nota_Memodi.txt", "text/plain")
+            with d1: st.download_button("📄 Markdown", resumen_firmado, "Nota.md")
+            with d2: st.download_button("📝 Texto", resumen_firmado, "Nota.txt")
             with d3:
                 try:
-                    pdf_bytes = create_pdf(resumen_final)
-                    st.download_button("📕 PDF", pdf_bytes, "Nota_Memodi.pdf", "application/pdf")
-                except:
-                    st.error("Error PDF")
-    else:
-        st.warning("⚠️ No se detectó texto subrayado.")
+                    st.download_button("📕 PDF", create_pdf(resumen_final), "Nota.pdf")
+                except: st.error("Error PDF")
