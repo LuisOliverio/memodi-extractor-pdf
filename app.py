@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. ESTILOS "NUCLEAR V2" ---
+# --- 2. ESTILOS "NUCLEAR V3" (Optimizado para Iframe Recortado) ---
 custom_css = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
@@ -31,18 +31,27 @@ header {visibility: hidden !important;}
 [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
 [data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
 
-/* Ajustar márgenes para subir el contenido al tope */
+/* Ajustar márgenes para el modo embebido */
 .block-container {
     padding-top: 0rem !important;
     padding-bottom: 0rem !important;
-    margin-top: -50px !important;
+    margin-top: -30px !important; /* Ajuste fino para el recorte superior */
 }
 
 /* Ocultar botón de deploy si persiste */
 .stDeployButton {display:none !important;}
+
+/* Ocultar botón de pantalla completa en imágenes */
+button[title="View fullscreen"] {
+    display: none !important;
+}
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
+
+# --- ESPACIADOR DE SEGURIDAD ---
+# Este div evita que el logo se corte por el desplazamiento del iframe en WordPress
+st.markdown("<div style='margin-top: 55px;'></div>", unsafe_allow_html=True)
 
 # --- 3. GESTIÓN DE SECRETOS ---
 try:
@@ -55,7 +64,6 @@ except Exception as e:
 
 # --- HELPER: LOGO EN HTML (SIN BOTONES DE ZOOM) ---
 def mostrar_logo():
-    # Usamos HTML puro para que no aparezca el botón de "Fullscreen" al pasar el mouse
     st.markdown(
         """
         <div style="display: flex; justify-content: center; margin-bottom: 10px;">
@@ -74,8 +82,7 @@ def check_password():
         return True
 
     # Interfaz de Login
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    mostrar_logo() # Logo HTML
+    mostrar_logo()
     st.markdown("<h3 style='text-align: center;'>Acceso Memodi Notes</h3>", unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1,2,1])
@@ -164,7 +171,7 @@ def summarize_with_ai(raw_text):
 
 # --- INTERFAZ VISUAL ---
 
-mostrar_logo() # Logo HTML aquí también
+mostrar_logo()
 st.markdown("<h1 style='text-align: center;'>Memodi Notes</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #555;'>Sube tu PDF subrayado y obtén tu nota clínica.</p>", unsafe_allow_html=True)
 
